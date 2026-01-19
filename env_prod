@@ -1,0 +1,5 @@
+DATABASE_URL="mysql://notephotos_user:NotephotosDB2024!@127.0.0.1:3306/notephotos"
+NEXTAUTH_SECRET="fc80252c8c6f1338d9760710609b552277d07931f6d345e"
+NEXTAUTH_URL="http://87.106.22.101"
+# OPENAI_API_KEY missing - to be added manually
+OPENAI_API_KEY=""

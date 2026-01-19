@@ -1,0 +1,60 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  USER
+  RESPONSABLE
+  ADMIN
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(USER)
+  reports   Report[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Report {
+  id        String        @id @default(uuid())
+  title     String
+  content   String        @db.LongText
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  entries   ReportEntry[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([userId])
+}
+
+model ReportEntry {
+  id            String @id @default(uuid())
+  reportId      String
+  report        Report @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  photoData     String @db.LongText // Base64 encoded photo
+  transcription String @db.Text
+  order         Int
+
+  @@index([reportId])
+}
+
+model SystemPrompt {
+  id          String   @id @default(uuid())
+  name        String
+  description String?  @db.Text
+  content     String   @db.LongText
+  isDefault   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
