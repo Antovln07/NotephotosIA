@@ -5,12 +5,16 @@ export async function createAsanaTask({
     title,
     content,
     photoBase64,
+    assigneeId,
+    dueOn,
 }: {
     token: string;
     projectId: string;
     title: string;
     content: string;
     photoBase64?: string;
+    assigneeId?: string;
+    dueOn?: string;
 }) {
     try {
         // 1. Create Task
@@ -25,6 +29,8 @@ export async function createAsanaTask({
                     name: title,
                     notes: content,
                     projects: [projectId],
+                    assignee: assigneeId,
+                    due_on: dueOn,
                 },
             }),
         });
@@ -103,7 +109,8 @@ export async function getAsanaProjects(token: string) {
                 const projectsData = await projectsRes.json();
                 allProjects.push(...projectsData.data.map((p: any) => ({
                     ...p,
-                    workspaceName: workspace.name
+                    workspaceName: workspace.name,
+                    workspaceGid: workspace.gid
                 })));
             }
         } catch (e) {
@@ -112,4 +119,19 @@ export async function getAsanaProjects(token: string) {
     }
 
     return allProjects;
+}
+
+export async function getWorkspaceUsers(token: string, workspaceId: string) {
+    try {
+        const usersRes = await fetch(`https://app.asana.com/api/1.0/workspaces/${workspaceId}/users?opt_fields=name,email,gid`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!usersRes.ok) return [];
+        const data = await usersRes.json();
+        return data.data || [];
+    } catch (e) {
+        console.error("Failed to fetch workspace users", e);
+        return [];
+    }
 }

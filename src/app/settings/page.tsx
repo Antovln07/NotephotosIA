@@ -67,11 +67,7 @@ export default function SettingsPage() {
                 body: JSON.stringify({
                     token,
                     projectId: selectedProject,
-                    // If we have projects loaded, we assume we are saving new config. 
-                    // Use workspace name or ID if available, but for now ID is enough if my helper handles it.
-                    // Wait, helper uses workspace ID to filter? No, helper fetches projects.
-                    // My PUT API expects workspaceId? Yes, I added it in schema, but not strictly required if we just use projects.
-                    // The create task API needs project ID.
+                    workspaceId: project ? (project as any).workspaceGid : undefined
                 })
             });
 

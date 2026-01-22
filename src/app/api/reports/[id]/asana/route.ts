@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { createAsanaTask } from "@/lib/asana";
+import { createAsanaTask, getWorkspaceUsers } from "@/lib/asana";
 import { reformulateForTask } from "@/lib/openai";
 
 export async function POST(
@@ -40,17 +40,50 @@ export async function POST(
             include: { report: { select: { title: true } } }
         });
 
-        // 3. Process Sync
+        // 3. Fetch Workspace Users (for smart assignment)
+        // We only fetch if we have a workspace ID, or we assume the helper finds it via projects? 
+        // Actually getWorkspaceUsers needs workspace ID. 
+        // We stored `asanaWorkspaceId` in User table, usually. 
+        // If not, we might need to fetch it or iterate. 
+        // For simplicity, let's assume if we have asanaWorkspaceId we use it. 
+        // If not, we might skip assignment or try to get it from a project lookup (expensive).
+        // Let's rely on `user.asanaWorkspaceId`.
+
+        let asanaUsers: any[] = [];
+        const userConfig = await prisma.user.findUnique({
+            where: { id: session.user.id },
+            select: { asanaAccessToken: true, asanaProjectId: true, asanaWorkspaceId: true }
+        });
+
+        if (userConfig?.asanaWorkspaceId) {
+            asanaUsers = await getWorkspaceUsers(userConfig.asanaAccessToken!, userConfig.asanaWorkspaceId);
+        }
+
+        // 4. Process Sync
         const results = await Promise.allSettled(entries.map(async (entry: any) => {
-            // Reformulate text and get title
-            const { title, content } = await reformulateForTask(entry.transcription);
+            // Reformulate text and get extraction data
+            const { title, content, assignee_name, due_date } = await reformulateForTask(entry.transcription);
+
+            let assigneeId: string | undefined = undefined;
+
+            // Try to match assignee
+            if (assignee_name && asanaUsers.length > 0) {
+                // Simple fuzzy match: check if name is included in user name
+                const lowerAssignee = assignee_name.toLowerCase();
+                const matchedUser = asanaUsers.find(u => u.name.toLowerCase().includes(lowerAssignee));
+                if (matchedUser) {
+                    assigneeId = matchedUser.gid;
+                }
+            }
 
             return createAsanaTask({
                 token: user.asanaAccessToken!,
                 projectId: user.asanaProjectId!,
-                title: title, // Use the AI generated short title
+                title: title,
                 content: content,
-                photoBase64: entry.photoData
+                photoBase64: entry.photoData,
+                assigneeId: assigneeId,
+                dueOn: due_date
             });
         }));
 
