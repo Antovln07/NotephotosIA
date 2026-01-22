@@ -20,6 +20,9 @@ model User {
   name      String
   role      Role     @default(USER)
   reports   Report[]
+  asanaAccessToken String? @db.Text
+  asanaProjectId   String?
+  asanaWorkspaceId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }

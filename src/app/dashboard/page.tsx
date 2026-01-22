@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
-import { Camera, FileText, Users, LogOut, FolderOpen, Sparkles } from "lucide-react";
+import { Camera, FileText, Users, LogOut, FolderOpen, Sparkles, Settings } from "lucide-react";
 
 export default function DashboardPage() {
     const { data: session } = useSession();
@@ -22,12 +22,20 @@ export default function DashboardPage() {
                             {session?.user?.name} • <span className="capitalize">{role?.toLowerCase()}</span>
                         </p>
                     </div>
-                    <button
-                        onClick={() => signOut({ callbackUrl: "/login" })}
-                        className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition"
-                    >
-                        <LogOut className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <Link
+                            href="/settings"
+                            className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition"
+                        >
+                            <Settings className="w-5 h-5" />
+                        </Link>
+                        <button
+                            onClick={() => signOut({ callbackUrl: "/login" })}
+                            className="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition"
+                        >
+                            <LogOut className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
             </header>
 
