@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import prisma from "@/lib/prisma";
-import { createAsanaTask } from "@/lib/asana";
-
 // GET /api/reports - List reports
 export async function GET(req: NextRequest) {
     const session = await getServerSession(authOptions);
@@ -70,30 +68,6 @@ export async function POST(req: NextRequest) {
                 entries: true,
             },
         });
-
-        // Asana Integration
-        try {
-            const user = await prisma.user.findUnique({
-                where: { id: session.user.id },
-                select: { asanaAccessToken: true, asanaProjectId: true }
-            });
-
-            if (user?.asanaAccessToken && user?.asanaProjectId) {
-                // Process asynchronously but await to ensure completion in serverless context
-                await Promise.allSettled(entries.map((entry: any, index: number) =>
-                    createAsanaTask({
-                        token: user.asanaAccessToken!,
-                        projectId: user.asanaProjectId!,
-                        title: `${title} - Note ${index + 1}`,
-                        content: entry.transcription,
-                        photoBase64: entry.photoBase64
-                    })
-                ));
-            }
-        } catch (asanaError) {
-            console.error("Failed to create Asana tasks:", asanaError);
-            // We do not fail the request if Asana fails, just log it
-        }
 
         return NextResponse.json(report, { status: 201 });
     } catch (error: any) {

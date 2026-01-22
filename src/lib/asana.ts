@@ -41,7 +41,9 @@ export async function createAsanaTask({
         // 2. Upload Attachment if photo exists
         if (photoBase64) {
             try {
-                const buffer = Buffer.from(photoBase64, "base64");
+                // Remove data:image/jpeg;base64, prefix if present
+                const base64Data = photoBase64.replace(/^data:image\/\w+;base64,/, "");
+                const buffer = Buffer.from(base64Data, "base64");
                 const blob = new Blob([buffer], { type: "image/jpeg" });
 
                 const formData = new FormData();

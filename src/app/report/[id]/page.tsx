@@ -34,6 +34,9 @@ export default function ReportDetailPage() {
     const [editingIndex, setEditingIndex] = useState<number | null>(null);
     const [editedText, setEditedText] = useState("");
     const [isExporting, setIsExporting] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+    const [selectedEntries, setSelectedEntries] = useState<string[]>([]);
+    const [syncStatus, setSyncStatus] = useState<{ synced: number, total: number } | null>(null);
 
     // Regeneration state
     const [isRegenerating, setIsRegenerating] = useState(false);
@@ -108,6 +111,49 @@ export default function ReportDetailPage() {
             }
         } catch (error) {
             console.error("Error deleting:", error);
+        }
+    };
+
+    const handleSyncAsana = async () => {
+        if (selectedEntries.length === 0) return;
+        setIsSyncing(true);
+        setSyncStatus(null);
+
+        try {
+            const res = await fetch(`/api/reports/${id}/asana`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ entryIds: selectedEntries })
+            });
+            const data = await res.json();
+
+            if (!res.ok) throw new Error(data.error || "Erreur lors de la synchronisation");
+
+            setSyncStatus({ synced: data.synced, total: data.total });
+            alert(`Synchronisation réussie : ${data.synced}/${data.total} tâches créées.`);
+            setSelectedEntries([]); // Reset selection
+        } catch (error: any) {
+            console.error("Sync error:", error);
+            alert("Erreur Sync Asana: " + error.message);
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    const toggleSelection = (entryId: string) => {
+        if (selectedEntries.includes(entryId)) {
+            setSelectedEntries(selectedEntries.filter(id => id !== entryId));
+        } else {
+            setSelectedEntries([...selectedEntries, entryId]);
+        }
+    };
+
+    const selectAll = () => {
+        if (!report) return;
+        if (selectedEntries.length === report.entries.length) {
+            setSelectedEntries([]);
+        } else {
+            setSelectedEntries(report.entries.map(e => e.id));
         }
     };
 
@@ -539,12 +585,20 @@ export default function ReportDetailPage() {
                     {report.entries.map((entry, i) => (
                         <div key={entry.id} className="space-y-4">
                             {/* Photo */}
-                            <div className="rounded-2xl overflow-hidden border border-zinc-800">
+                            <div className="rounded-2xl overflow-hidden border border-zinc-800 relative group">
                                 <img
                                     src={entry.photoData}
                                     alt={`Photo ${i + 1}`}
                                     className="w-full aspect-[4/3] object-cover"
                                 />
+                                <div className="absolute top-2 right-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedEntries.includes(entry.id)}
+                                        onChange={() => toggleSelection(entry.id)}
+                                        className="w-6 h-6 rounded-md border-zinc-500 bg-black/50 checked:bg-blue-600 focus:ring-blue-500 cursor-pointer"
+                                    />
+                                </div>
                             </div>
 
                             {/* Transcription */}
@@ -594,23 +648,42 @@ export default function ReportDetailPage() {
 
             {/* Export Bar */}
             <div className="fixed bottom-0 left-0 right-0 bg-zinc-900/95 backdrop-blur border-t border-zinc-800 p-4">
-                <div className="flex gap-3 max-w-2xl mx-auto">
-                    <button
-                        onClick={exportToPDF}
-                        disabled={isExporting}
-                        className="flex-1 py-3 bg-red-600 hover:bg-red-500 rounded-xl font-medium transition flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                        <Download className="w-5 h-5" />
-                        Export PDF
-                    </button>
-                    <button
-                        onClick={exportToWord}
-                        disabled={isExporting}
-                        className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-medium transition flex items-center justify-center gap-2 disabled:opacity-50"
-                    >
-                        <FileText className="w-5 h-5" />
-                        Export Word
-                    </button>
+                <div className="flex gap-3 max-w-2xl mx-auto flex-col sm:flex-row">
+                    <div className="flex-1 flex gap-3">
+                        <button
+                            onClick={exportToPDF}
+                            disabled={isExporting}
+                            className="flex-1 py-3 bg-red-600 hover:bg-red-500 rounded-xl font-medium transition flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                            <Download className="w-5 h-5" />
+                            <span className="hidden sm:inline">PDF</span>
+                        </button>
+                        <button
+                            onClick={exportToWord}
+                            disabled={isExporting}
+                            className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 rounded-xl font-medium transition flex items-center justify-center gap-2 disabled:opacity-50"
+                        >
+                            <FileText className="w-5 h-5" />
+                            <span className="hidden sm:inline">Word</span>
+                        </button>
+                    </div>
+
+                    <div className="flex items-center gap-3 border-l border-zinc-700 pl-3">
+                        <button
+                            onClick={selectAll}
+                            className="text-xs text-zinc-400 hover:text-white underline"
+                        >
+                            {selectedEntries.length === report?.entries.length ? "Tout désélect." : "Tout sélect."}
+                        </button>
+                        <button
+                            onClick={handleSyncAsana}
+                            disabled={isSyncing || selectedEntries.length === 0}
+                            className="py-3 px-6 bg-purple-600 hover:bg-purple-500 rounded-xl font-medium transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:bg-zinc-800"
+                        >
+                            {isSyncing ? <Loader2 className="w-5 h-5 animate-spin" /> : <RefreshCw className="w-5 h-5" />}
+                            Sync Asana ({selectedEntries.length})
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
