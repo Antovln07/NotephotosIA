@@ -50,11 +50,28 @@ export default function CreateReportPage() {
 
     // --- Photo Logic ---
     const handlePhotoCapture = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files && e.target.files[0]) {
-            const file = e.target.files[0];
-            const preview = URL.createObjectURL(file);
-            setCurrentPhoto({ file, preview });
-            setStep("record");
+        if (e.target.files && e.target.files.length > 0) {
+            const files = Array.from(e.target.files);
+
+            if (files.length > 1) {
+                // Bulk upload: bypass recording
+                const newEntries: PhotoEntry[] = files.map(file => ({
+                    photo: file,
+                    photoPreview: URL.createObjectURL(file),
+                    audioBlob: new Blob([], { type: "audio/webm" }) // Empty blob for silence
+                }));
+
+                setEntries(prev => [...prev, ...newEntries]);
+
+                // Optional: Show immediate feedback or just stay on capture step
+                // alert(`${files.length} photos added!`); 
+            } else {
+                // Single photo: standard flow
+                const file = files[0];
+                const preview = URL.createObjectURL(file);
+                setCurrentPhoto({ file, preview });
+                setStep("record");
+            }
         }
     };
 
@@ -263,8 +280,7 @@ export default function CreateReportPage() {
                                 <ImageIcon className="w-10 h-10 text-purple-400" />
                                 <span className="text-sm">Galerie</span>
                                 <input
-                                    type="file"
-                                    accept="image/*"
+                                    multiple
                                     className="hidden"
                                     onChange={handlePhotoCapture}
                                 />
@@ -414,6 +430,13 @@ export default function CreateReportPage() {
                             )}
                         </button>
                     </div>
+                </div>
+            )}
+            {/* Loading Overlay */}
+            {isProcessing && (
+                <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-zinc-200/95 backdrop-blur text-zinc-900">
+                    <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
+                    <p className="font-medium animate-pulse text-lg">Génération en cours</p>
                 </div>
             )}
         </div>

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import Link from "next/link";
-import { ArrowLeft, Trash2, Download, FileText, Calendar, Edit3, Check, X, Loader2, User } from "lucide-react";
+import { ArrowLeft, Trash2, Download, FileText, Calendar, Edit3, Check, X, Loader2, User, RefreshCw, Sparkles } from "lucide-react";
 
 interface ReportEntry {
     id: string;
@@ -35,6 +35,12 @@ export default function ReportDetailPage() {
     const [editedText, setEditedText] = useState("");
     const [isExporting, setIsExporting] = useState(false);
 
+    // Regeneration state
+    const [isRegenerating, setIsRegenerating] = useState(false);
+    const [showRegenModal, setShowRegenModal] = useState(false);
+    const [prompts, setPrompts] = useState<{ id: string, name: string, isDefault: boolean }[]>([]);
+    const [selectedPromptId, setSelectedPromptId] = useState("");
+
     useEffect(() => {
         const fetchReport = async () => {
             try {
@@ -53,7 +59,44 @@ export default function ReportDetailPage() {
         };
 
         if (id) fetchReport();
+        if (id) fetchReport();
+
+        // Fetch prompts
+        fetch("/api/prompts")
+            .then(res => res.json())
+            .then(data => {
+                setPrompts(data);
+                const def = data.find((p: any) => p.isDefault);
+                if (def) setSelectedPromptId(def.id);
+            })
+            .catch(console.error);
     }, [id, router]);
+
+    const handleRegenerate = async () => {
+        if (!process.env.NEXT_PUBLIC_DEMO_MODE && !confirm("Cela va écraser le contenu actuel du rapport. Continuer ?")) return;
+
+        setIsRegenerating(true);
+        setShowRegenModal(false);
+
+        try {
+            const res = await fetch(`/api/reports/${id}/regenerate`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ promptId: selectedPromptId }),
+            });
+
+            if (!res.ok) throw new Error(await res.text());
+
+            const updatedReport = await res.json();
+            setReport(updatedReport);
+            alert("Rapport régénéré avec succès !");
+        } catch (error) {
+            console.error("Regeneration error:", error);
+            alert("Erreur lors de la régénération : " + error);
+        } finally {
+            setIsRegenerating(false);
+        }
+    };
 
     const handleDelete = async () => {
         if (!confirm("Supprimer ce rapport ?")) return;
@@ -82,11 +125,18 @@ export default function ReportDetailPage() {
             transcription: editedText,
         };
 
+        // Create a lightweight payload without photoData to avoid 413 errors
+        const payloadEntries = updatedEntries.map(({ id, transcription, order }) => ({
+            id,
+            transcription,
+            order
+        }));
+
         try {
             await fetch(`/api/reports/${id}`, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ entries: updatedEntries }),
+                body: JSON.stringify({ entries: payloadEntries }),
             });
 
             setReport({ ...report, entries: updatedEntries });
@@ -157,46 +207,75 @@ export default function ReportDetailPage() {
             yPosition += 15;
             pdf.setTextColor(0);
 
-            // Entries
-            for (let i = 0; i < report.entries.length; i++) {
-                const entry = report.entries[i];
+            // Parse content: Split by [[IMAGE_N]] tags
+            const parts = report.content.split(/(\[\[IMAGE_\d+\]\])/g);
 
-                if (yPosition > pdf.internal.pageSize.getHeight() - 100) {
-                    pdf.addPage();
-                    yPosition = margin;
-                }
+            for (const part of parts) {
+                const imageMatch = part.match(/\[\[IMAGE_(\d+)\]\]/);
 
-                try {
-                    // Normalize image to fix rotation issues and get dimensions
-                    const { base64, width, height } = await normalizeImage(entry.photoData);
+                if (imageMatch) {
+                    // It's an image placeholder
+                    const imageIndex = parseInt(imageMatch[1]) - 1; // 1-based to 0-based
+                    const entry = report.entries.find((e, i) => i === imageIndex || e.order === imageIndex); // Try both index match
 
-                    // Calculate dimensions to fit in PDF while maintaining aspect ratio
-                    const maxWidth = contentWidth * 0.8;
-                    const ratio = width / height;
-                    const imgWidth = maxWidth;
-                    const imgHeight = maxWidth / ratio;
+                    if (entry) {
+                        if (yPosition > pdf.internal.pageSize.getHeight() - 80) {
+                            pdf.addPage();
+                            yPosition = margin;
+                        }
 
-                    pdf.addImage(base64, "JPEG", margin + (contentWidth - imgWidth) / 2, yPosition, imgWidth, imgHeight);
-                    yPosition += imgHeight + 10;
-                } catch (imgError) {
-                    console.error("Error adding image:", imgError);
-                }
+                        try {
+                            const { base64, width, height } = await normalizeImage(entry.photoData);
 
-                if (entry.transcription) {
+                            // Max height 100mm to avoid taking too much page space
+                            const maxWidth = contentWidth * 0.8;
+                            const maxHeight = 120; // limit height
+
+                            const ratio = width / height;
+                            let imgWidth = maxWidth;
+                            let imgHeight = maxWidth / ratio;
+
+                            // Adjust if too tall
+                            if (imgHeight > maxHeight) {
+                                imgHeight = maxHeight;
+                                imgWidth = maxHeight * ratio;
+                            }
+
+                            // Center image
+                            const xPos = margin + (contentWidth - imgWidth) / 2;
+
+                            pdf.addImage(base64, "JPEG", xPos, yPosition, imgWidth, imgHeight);
+                            yPosition += imgHeight + 10;
+                        } catch (err) {
+                            console.error("Image error", err);
+                        }
+                    }
+                } else {
+                    // It's text
+                    const text = part.trim();
+                    if (!text) continue;
+
                     pdf.setFontSize(11);
                     pdf.setFont("helvetica", "normal");
-                    const lines = pdf.splitTextToSize(entry.transcription, contentWidth);
 
-                    const textHeight = lines.length * 6;
-                    if (yPosition + textHeight > pdf.internal.pageSize.getHeight() - margin) {
-                        pdf.addPage();
-                        yPosition = margin;
+                    // Basic Markdown cleaning (remove #, **, etc mostly)
+                    // Note: proper markdown parsing in jsPDF is hard, doing basic cleanup
+                    const cleanText = text
+                        .replace(/^#+\s/gm, '') // Remove headers
+                        .replace(/\*\*/g, '');  // Remove bold markers
+
+                    const lines = pdf.splitTextToSize(cleanText, contentWidth);
+                    const lineHeight = 6;
+
+                    for (const line of lines) {
+                        if (yPosition > pdf.internal.pageSize.getHeight() - margin) {
+                            pdf.addPage();
+                            yPosition = margin;
+                        }
+                        pdf.text(line, margin, yPosition);
+                        yPosition += lineHeight;
                     }
-
-                    pdf.text(lines, margin, yPosition);
-                    yPosition += textHeight + 20;
-                } else {
-                    yPosition += 10;
+                    yPosition += 5; // Paragraph spacing
                 }
             }
 
@@ -229,6 +308,8 @@ export default function ReportDetailPage() {
                                 year: "numeric",
                                 month: "long",
                                 day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
                             }),
                             italics: true,
                             color: "666666",
@@ -238,48 +319,92 @@ export default function ReportDetailPage() {
                 new Paragraph({ text: "" }),
             ];
 
-            for (let i = 0; i < report.entries.length; i++) {
-                const entry = report.entries[i];
+            // Parse content: Split by [[IMAGE_N]] tags
+            const parts = report.content.split(/(\[\[IMAGE_\d+\]\])/g);
 
-                try {
-                    // Normalize image to fix rotation issues
-                    const { base64, width, height } = await normalizeImage(entry.photoData);
-                    const base64Data = base64.split(",")[1];
-                    const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+            for (const part of parts) {
+                const imageMatch = part.match(/\[\[IMAGE_(\d+)\]\]/);
 
-                    // Calculate dimensions for Word (max width around 400px equivalent)
-                    const maxWidth = 400;
-                    const ratio = width / height;
-                    const imgWidth = maxWidth;
-                    const imgHeight = maxWidth / ratio;
+                if (imageMatch) {
+                    // It's an image placeholder
+                    const imageIndex = parseInt(imageMatch[1]) - 1; // 1-based to 0-based
+                    const entry = report.entries.find((e, i) => i === imageIndex || e.order === imageIndex);
 
-                    children.push(
-                        new Paragraph({
-                            children: [
-                                new ImageRun({
-                                    data: imageBuffer,
-                                    transformation: { width: imgWidth, height: imgHeight },
-                                    type: "jpg",
-                                }),
-                            ],
-                        })
-                    );
-                } catch (imgError) {
-                    console.error("Error adding image to Word:", imgError);
+                    if (entry) {
+                        try {
+                            const { base64, width, height } = await normalizeImage(entry.photoData);
+                            const base64Data = base64.split(",")[1];
+                            const imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+
+                            // Calculate dimensions for Word (max width around 400px equivalent)
+                            const maxWidth = 400;
+                            const ratio = width / height;
+                            const imgWidth = maxWidth;
+                            const imgHeight = maxWidth / ratio;
+
+                            children.push(
+                                new Paragraph({
+                                    children: [
+                                        new ImageRun({
+                                            data: imageBuffer,
+                                            transformation: { width: imgWidth, height: imgHeight },
+                                            type: "jpg",
+                                        }),
+                                    ],
+                                    alignment: "center",
+                                    spacing: { before: 200, after: 200 },
+                                })
+                            );
+                        } catch (err) {
+                            console.error("Image error", err);
+                        }
+                    }
+                } else {
+                    // Text content
+                    const text = part.trim();
+                    if (!text) continue;
+
+                    // Naive markdown handling: Split by newlines to preserve basic paragraph structure
+                    const paragraphs = text.split('\n');
+
+                    for (const pText of paragraphs) {
+                        if (!pText.trim()) continue;
+
+                        let cleanText = pText.trim();
+                        let headingLevel: any = undefined;
+                        let isBold = false;
+
+                        // Check for headers
+                        if (cleanText.startsWith('# ')) {
+                            headingLevel = HeadingLevel.HEADING_1;
+                            cleanText = cleanText.replace('# ', '');
+                        } else if (cleanText.startsWith('## ')) {
+                            headingLevel = HeadingLevel.HEADING_2;
+                            cleanText = cleanText.replace('## ', '');
+                        } else if (cleanText.startsWith('### ')) {
+                            headingLevel = HeadingLevel.HEADING_3;
+                            cleanText = cleanText.replace('### ', '');
+                        }
+
+                        // Check for bold (simple check for **wrapper**)
+                        // Note: docx handling of inline formatting is complex, doing simple paragraph level for now
+                        // or just simple strip
+                        cleanText = cleanText.replace(/\*\*/g, '');
+
+                        children.push(
+                            new Paragraph({
+                                children: [
+                                    new TextRun({
+                                        text: cleanText,
+                                        bold: isBold
+                                    }),
+                                ],
+                                heading: headingLevel,
+                                spacing: { after: 120 },
+                            })
+                        );
+                    }
                 }
-
-                if (entry.transcription) {
-                    children.push(
-                        new Paragraph({
-                            children: [
-                                new TextRun({ text: entry.transcription }),
-                            ],
-                            spacing: { before: 200, after: 400 },
-                        })
-                    );
-                }
-
-                children.push(new Paragraph({ text: "" }));
             }
 
             const doc = new Document({
@@ -315,14 +440,79 @@ export default function ReportDetailPage() {
                         <ArrowLeft className="w-5 h-5" />
                     </Link>
                     <h1 className="text-lg font-semibold truncate px-4">{report.title}</h1>
-                    <button
-                        onClick={handleDelete}
-                        className="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition"
-                    >
-                        <Trash2 className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setShowRegenModal(true)}
+                            className="p-2 text-blue-400 hover:bg-blue-400/10 rounded-full transition"
+                            title="Régénérer avec l'IA"
+                        >
+                            <RefreshCw className="w-5 h-5" />
+                        </button>
+                        <button
+                            onClick={handleDelete}
+                            className="p-2 text-red-500 hover:bg-red-500/10 rounded-full transition"
+                            title="Supprimer"
+                        >
+                            <Trash2 className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
             </header>
+
+            {/* Regeneration Modal */}
+            {showRegenModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 w-full max-w-sm space-y-6">
+                        <div className="text-center">
+                            <div className="mx-auto w-12 h-12 bg-blue-500/10 rounded-full flex items-center justify-center mb-4">
+                                <Sparkles className="w-6 h-6 text-blue-400" />
+                            </div>
+                            <h3 className="text-lg font-semibold">Régénérer le rapport</h3>
+                            <p className="text-sm text-zinc-400 mt-2">
+                                Choisissez un style pour réécrire entièrement le rapport.
+                            </p>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="text-xs font-medium text-zinc-500 uppercase">Prompt Système</label>
+                            <select
+                                value={selectedPromptId}
+                                onChange={(e) => setSelectedPromptId(e.target.value)}
+                                className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-xl appearance-none focus:outline-none focus:border-blue-500"
+                            >
+                                {prompts.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                        {p.name}{p.isDefault ? " ★" : ""}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        <div className="flex gap-3">
+                            <button
+                                onClick={() => setShowRegenModal(false)}
+                                className="flex-1 py-3 bg-zinc-800 rounded-xl font-medium hover:bg-zinc-700 transition"
+                            >
+                                Annuler
+                            </button>
+                            <button
+                                onClick={handleRegenerate}
+                                className="flex-1 py-3 bg-blue-600 rounded-xl font-semibold hover:bg-blue-500 transition"
+                            >
+                                Régénérer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Check overlay for regenerating loader */}
+            {isRegenerating && (
+                <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center bg-zinc-200/95 backdrop-blur text-zinc-900">
+                    <Loader2 className="w-10 h-10 animate-spin text-blue-600 mb-4" />
+                    <p className="font-medium animate-pulse text-lg">Génération en cours</p>
+                </div>
+            )}
 
             {/* Content */}
             <main className="max-w-2xl mx-auto p-4 pb-32">
