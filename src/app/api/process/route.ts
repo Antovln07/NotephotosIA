@@ -19,7 +19,7 @@ Exemple de transformation attendue :
 
 CRÉE UN RAPPORT EN MARKDOWN avec :
 
-1. **Titre** : Un titre professionnel et descriptif (pas générique)
+1. **Titre** : Un titre court (max 6 mots), percutant et descriptif du contenu global (Ex: "Inspection Toiture Batiment B").
 2. **Résumé** : 2-3 phrases synthétisant l'ensemble du rapport
 3. **Pour chaque photo** (${entryCount} au total) :
    - Utilise [[IMAGE_{numéro}]] comme emplacement de l'image (numéros de 1 à ${entryCount})

@@ -42,14 +42,14 @@ export async function POST(
 
         // 3. Process Sync
         const results = await Promise.allSettled(entries.map(async (entry: any) => {
-            // Reformulate text
-            const reformulatedContent = await reformulateForTask(entry.transcription);
+            // Reformulate text and get title
+            const { title, content } = await reformulateForTask(entry.transcription);
 
             return createAsanaTask({
                 token: user.asanaAccessToken!,
                 projectId: user.asanaProjectId!,
-                title: `${entry.report.title} - Note ${(entry.order as number) + 1}`,
-                content: reformulatedContent,
+                title: title, // Use the AI generated short title
+                content: content,
                 photoBase64: entry.photoData
             });
         }));

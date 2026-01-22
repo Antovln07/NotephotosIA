@@ -3,25 +3,35 @@ import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-export async function reformulateForTask(transcription: string): Promise<string> {
+export async function reformulateForTask(transcription: string): Promise<{ title: string; content: string }> {
     try {
         const response = await openai.chat.completions.create({
             model: "gpt-4o",
             messages: [
                 {
                     role: "system",
-                    content: "Tu es un assistant qui prépare des descriptions de tâches pour un outil de gestion de projet (Asana). Ta mission est de reformuler une transcription vocale informelle en une description de tâche claire, professionnelle et actionnable. Ne mets pas de titre, juste le contenu reformulé."
+                    content: "Tu es un expert en gestion de tâches. Tu reçois une transcription vocale. \n" +
+                        "Ta mission : \n" +
+                        "1. Reformuler le contenu pour en faire une description de tâche Asana claire et actionnable.\n" +
+                        "2. Générer un titre court et précis pour cette tâche (max 5-6 mots).\n" +
+                        "\n" +
+                        "Réponds UNIQUEMENT au format JSON : { \"title\": \"...\", \"content\": \"...\" }"
                 },
                 {
                     role: "user",
-                    content: `Voici la transcription : "${transcription}"`
+                    content: `Transcription : "${transcription}"`
                 }
-            ]
+            ],
+            response_format: { type: "json_object" }
         });
 
-        return response.choices[0].message.content || transcription;
+        const result = JSON.parse(response.choices[0].message.content || "{}");
+        return {
+            title: result.title || "Nouvelle note",
+            content: result.content || transcription
+        };
     } catch (error) {
         console.error("OpenAI Reformulation Error:", error);
-        return transcription; // Fallback to original text
+        return { title: "Note Photo", content: transcription };
     }
 }
