@@ -35,6 +35,7 @@ export default function CreateReportPage() {
     const chunksRef = useRef<Blob[]>([]);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const photoInputRef = useRef<HTMLInputElement>(null);
+    const galleryInputRef = useRef<HTMLInputElement>(null);
 
     // Fetch available prompts on mount
     useEffect(() => {
@@ -276,17 +277,21 @@ export default function CreateReportPage() {
                                     onChange={handlePhotoCapture}
                                 />
                             </label>
-                            <label className="flex flex-col items-center gap-2 p-6 bg-zinc-900 rounded-2xl border border-zinc-700 hover:border-purple-500 transition cursor-pointer">
+                            <div
+                                onClick={() => galleryInputRef.current?.click()}
+                                className="flex flex-col items-center gap-2 p-6 bg-zinc-900 rounded-2xl border border-zinc-700 hover:border-purple-500 transition cursor-pointer"
+                            >
                                 <ImageIcon className="w-10 h-10 text-purple-400" />
                                 <span className="text-sm">Galerie</span>
                                 <input
+                                    ref={galleryInputRef}
                                     type="file"
                                     accept="image/*"
                                     multiple
                                     className="hidden"
                                     onChange={handlePhotoCapture}
                                 />
-                            </label>
+                            </div>
                         </div>
                     </>
                 )}
