@@ -280,6 +280,8 @@ export default function CreateReportPage() {
                                 <ImageIcon className="w-10 h-10 text-purple-400" />
                                 <span className="text-sm">Galerie</span>
                                 <input
+                                    type="file"
+                                    accept="image/*"
                                     multiple
                                     className="hidden"
                                     onChange={handlePhotoCapture}
